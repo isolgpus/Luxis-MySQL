@@ -1,0 +1,9 @@
+target/*
+.idea/*
+*.iml
+.m2/*
+
+# Docs
+docs/node_modules/
+docs/dist/
+docs/.astro/
