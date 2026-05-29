@@ -54,12 +54,9 @@ public class MysqlDatabaseClient implements DatabaseClient<MysqlTransaction, Row
     }
 
     private SqlClient resolveClient(final MysqlTransaction tx) {
-        if(tx == null)
-        {
+        if (tx == null) {
             return pool;
-        }
-        else
-        {
+        } else {
             return tx.connection();
         }
     }
@@ -88,7 +85,7 @@ public class MysqlDatabaseClient implements DatabaseClient<MysqlTransaction, Row
                 .executeBatch(rows.stream().map(arr -> Tuple.from(Arrays.asList(arr))).toList())
                 .map(s -> {
                     final Long lastId = s.property(MySQLClient.LAST_INSERTED_ID);
-                    return new BatchUpdateResult<>(new int[]{ s.rowCount() }, lastId == null ? List.of() : List.of(lastId));
+                    return new BatchUpdateResult<>(new int[] {s.rowCount()}, lastId == null ? List.of() : List.of(lastId));
                 });
     }
 
@@ -100,13 +97,14 @@ public class MysqlDatabaseClient implements DatabaseClient<MysqlTransaction, Row
                 .executeBatch(tuples)
                 .map(s -> {
                     final Long lastId = s.property(MySQLClient.LAST_INSERTED_ID);
-                    return new BatchUpdateResult<>(new int[]{ s.rowCount() }, lastId == null ? List.of() : List.of(lastId));
+                    return new BatchUpdateResult<>(new int[] {s.rowCount()}, lastId == null ? List.of() : List.of(lastId));
                 });
     }
 
     private static final class NamedSql {
         final String sql;
         final List<String> names;
+
         NamedSql(final String sql, final List<String> names) {
             this.sql = sql;
             this.names = names;
