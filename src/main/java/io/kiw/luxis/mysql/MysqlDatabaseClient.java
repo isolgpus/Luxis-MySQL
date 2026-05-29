@@ -63,7 +63,11 @@ public class MysqlDatabaseClient implements DatabaseClient<MysqlTransaction, Row
 
     @Override
     public <T> Future<List<T>> query(final MysqlTransaction tx, final String sql, final Function<Row, T> rowMapper, final Map<String, Object> params) {
-        return null;
+        final NamedSql named = translate(sql);
+        return resolveClient(tx).preparedQuery(named.sql)
+                .mapping(rowMapper)
+                .execute(toTuple(named.names, params))
+                .map(ts -> ts.stream().toList());
     }
 
     @Override

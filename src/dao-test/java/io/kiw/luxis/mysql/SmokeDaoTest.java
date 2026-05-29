@@ -124,6 +124,36 @@ public class SmokeDaoTest extends MysqlDaoTestBase {
     }
 
     @Test
+    public void namedParamQueryReadsCommittedRows() throws Exception {
+        databaseClient.update(null, "INSERT INTO widget (id, name) VALUES (?, ?)", 90L, "namedquery")
+                .toCompletionStage().toCompletableFuture().join();
+
+        final List<String> names = databaseClient.query(null,
+                        "SELECT name FROM widget WHERE id = :id",
+                        row -> row.getString("name"), Map.of("id", 90L))
+                .toCompletionStage().toCompletableFuture().join();
+
+        assertEquals(List.of("namedquery"), names);
+        client.assertNoMoreExceptions();
+    }
+
+    @Test
+    public void namedParamQueryReferencingSameParamTwiceBindsTwice() throws Exception {
+        databaseClient.update(null, "INSERT INTO widget (id, name) VALUES (?, ?)", 91L, "match")
+                .toCompletionStage().toCompletableFuture().join();
+        databaseClient.update(null, "INSERT INTO widget (id, name) VALUES (?, ?)", 92L, "match")
+                .toCompletionStage().toCompletableFuture().join();
+
+        final List<String> names = databaseClient.query(null,
+                        "SELECT name FROM widget WHERE id = :id OR (name = :name AND id <> :id)",
+                        row -> row.getString("name"), Map.of("id", 91L, "name", "match"))
+                .toCompletionStage().toCompletableFuture().join();
+
+        assertEquals(List.of("match", "match"), names);
+        client.assertNoMoreExceptions();
+    }
+
+    @Test
     public void namedUpdateInTransactionInsertsRow() throws Exception {
         final TestHttpResponse response = client.post(
                 StubRequest.request("/widgets/named").body("{\"id\":3,\"name\":\"piston\"}"));
