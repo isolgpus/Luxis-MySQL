@@ -1,7 +1,7 @@
 package io.kiw.luxis.mysql;
 
 import io.kiw.luxis.web.Luxis;
-import io.kiw.luxis.web.TestLuxis;
+import io.kiw.luxis.web.WebServiceConfigBuilder;
 import io.kiw.luxis.web.handler.JsonHandler;
 import io.kiw.luxis.web.http.ErrorMessageResponse;
 import io.kiw.luxis.web.http.ErrorStatusCode;
@@ -9,17 +9,21 @@ import io.kiw.luxis.web.http.HttpResult;
 import io.kiw.luxis.web.http.Method;
 import io.kiw.luxis.web.internal.LuxisPipeline;
 import io.kiw.luxis.web.pipeline.HttpStream;
+import io.kiw.luxis.web.test.StubNetwork;
 import io.kiw.luxis.web.test.StubRequest;
 import io.kiw.luxis.web.test.StubTestClient;
 import io.kiw.luxis.web.test.TestHttpResponse;
+import io.kiw.luxis.web.test.TestLuxis;
 import io.vertx.sqlclient.Row;
 import org.junit.Before;
 import org.junit.Test;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static io.kiw.luxis.web.test.TestHelper.json;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -34,23 +38,25 @@ public class SmokeDaoTest extends MysqlDaoTestBase {
         runUpdate("CREATE TABLE widget (id BIGINT PRIMARY KEY, name VARCHAR(64) NOT NULL)");
         runUpdate("DROP TABLE IF EXISTS users");
         runUpdate("CREATE TABLE users (id BIGINT PRIMARY KEY, name VARCHAR(64) NOT NULL)");
-        final TestLuxis<Void> luxis = Luxis.test(routes -> {
-            routes.jsonRoute("/users", Method.POST, null, CreateUserRequest.class, new CreateUserTransactionallyHandler());
-            routes.jsonRoute("/users/rollback", Method.POST, null, CreateUserRequest.class, new RollbackUserHandler());
-            routes.jsonRoute("/widgets", Method.POST, null, CreateWidgetRequest.class, new CreateWidgetNonTxHandler());
-            routes.jsonRoute("/widgets/find", Method.POST, null, FindWidgetRequest.class, new FindWidgetNonTxHandler());
-            routes.jsonRoute("/widgets/find-tx", Method.POST, null, FindWidgetRequest.class, new FindWidgetInTxHandler());
-            routes.jsonRoute("/widgets/named", Method.POST, null, CreateWidgetRequest.class, new CreateWidgetNamedHandler());
-            routes.jsonRoute("/widgets/batch", Method.POST, null, CreateWidgetsRequest.class, new BatchInsertWidgetsHandler());
-            routes.jsonRoute("/widgets/batch-named", Method.POST, null, CreateWidgetsRequest.class, new BatchInsertWidgetsNamedHandler());
-            routes.jsonRoute("/widgets/two-then-fail", Method.POST, null, CreateWidgetsRequest.class, new TwoInsertsThenFailHandler());
-            routes.jsonRoute("/widgets/duplicate-pk", Method.POST, null, CreateWidgetsRequest.class, new DuplicatePkInTxHandler());
-            routes.jsonRoute("/sql/named-update", Method.POST, null, NamedSqlRequest.class, new RawNamedUpdateHandler());
-            return null;
-        }, databaseClient);
+        final StubNetwork network = new StubNetwork();
+        final TestLuxis<Object> luxis = TestLuxis.from(Luxis.app(routes -> {
+                    routes.jsonRoute("/users", Method.POST, null, CreateUserRequest.class, new CreateUserTransactionallyHandler());
+                    routes.jsonRoute("/users/rollback", Method.POST, null, CreateUserRequest.class, new RollbackUserHandler());
+                    routes.jsonRoute("/widgets", Method.POST, null, CreateWidgetRequest.class, new CreateWidgetNonTxHandler());
+                    routes.jsonRoute("/widgets/find", Method.POST, null, FindWidgetRequest.class, new FindWidgetNonTxHandler());
+                    routes.jsonRoute("/widgets/find-tx", Method.POST, null, FindWidgetRequest.class, new FindWidgetInTxHandler());
+                    routes.jsonRoute("/widgets/named", Method.POST, null, CreateWidgetRequest.class, new CreateWidgetNamedHandler());
+                    routes.jsonRoute("/widgets/batch", Method.POST, null, CreateWidgetsRequest.class, new BatchInsertWidgetsHandler());
+                    routes.jsonRoute("/widgets/batch-named", Method.POST, null, CreateWidgetsRequest.class, new BatchInsertWidgetsNamedHandler());
+                    routes.jsonRoute("/widgets/two-then-fail", Method.POST, null, CreateWidgetsRequest.class, new TwoInsertsThenFailHandler());
+                    routes.jsonRoute("/widgets/duplicate-pk", Method.POST, null, CreateWidgetsRequest.class, new DuplicatePkInTxHandler());
+                    routes.jsonRoute("/sql/named-update", Method.POST, null, NamedSqlRequest.class, new RawNamedUpdateHandler());
+                    return null;
+                }).withDatabase(databaseClient)
+                .withConfig(new WebServiceConfigBuilder().setExceptionHandler(Throwable::printStackTrace).build()),
+                network);
 
-        client = new StubTestClient("localhost", 0, luxis);
-        luxis.setExceptionHandler(Throwable::printStackTrace);
+        client = new StubTestClient("localhost", 8080, network);
     }
 
     private static void runUpdate(final String sql) throws Exception {
@@ -172,7 +178,14 @@ public class SmokeDaoTest extends MysqlDaoTestBase {
 
         assertEquals(500, response.statusCode);
         assertEquals(List.of(), selectWidgetNames(40L));
-        client.assertNoMoreExceptions();
+        client.assertException("Duplicate entry '40' for key 'widget.PRIMARY'");
+
+        final TestHttpResponse getResponse = client.post(
+                StubRequest.request("/widgets/find").body(
+                        "{\"id\":40}"));
+        final ObjectNode node = json();
+        node.putArray("names");
+        assertEquals(node.toString(), getResponse.responseBody);
     }
 
     @Test
@@ -299,12 +312,23 @@ public class SmokeDaoTest extends MysqlDaoTestBase {
         for (int i = 0; i < s.length(); i++) {
             final char c = s.charAt(i);
             switch (c) {
-                case '"': out.append("\\\""); break;
-                case '\\': out.append("\\\\"); break;
-                case '\n': out.append("\\n"); break;
-                case '\r': out.append("\\r"); break;
-                case '\t': out.append("\\t"); break;
-                default: out.append(c);
+                case '"':
+                    out.append("\\\"");
+                    break;
+                case '\\':
+                    out.append("\\\\");
+                    break;
+                case '\n':
+                    out.append("\\n");
+                    break;
+                case '\r':
+                    out.append("\\r");
+                    break;
+                case '\t':
+                    out.append("\\t");
+                    break;
+                default:
+                    out.append(c);
             }
         }
         out.append('"');
@@ -312,13 +336,13 @@ public class SmokeDaoTest extends MysqlDaoTestBase {
 
     private List<String> selectUserNames(final long id) {
         return databaseClient.query(null, "SELECT name FROM users WHERE id = ?",
-                row -> row.getString("name"), id)
+                        row -> row.getString("name"), id)
                 .toCompletionStage().toCompletableFuture().join();
     }
 
     private List<String> selectWidgetNames(final long id) {
         return databaseClient.query(null, "SELECT name FROM widget WHERE id = ?",
-                row -> row.getString("name"), id)
+                        row -> row.getString("name"), id)
                 .toCompletionStage().toCompletableFuture().join();
     }
 
@@ -440,7 +464,7 @@ public class SmokeDaoTest extends MysqlDaoTestBase {
                     .inTransaction(tx -> tx
                             .asyncPeek(ctx -> {
                                 final List<Object[]> rows = ctx.in().widgets.stream()
-                                        .map(w -> new Object[]{w.id, w.name})
+                                        .map(w -> new Object[] {w.id, w.name})
                                         .toList();
                                 return ctx.db().updateBatch(
                                         "INSERT INTO widget (id, name) VALUES (?, ?)", rows);
