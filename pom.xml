@@ -6,7 +6,7 @@
 
     <groupId>io.kiw.luxis</groupId>
     <artifactId>luxis-mysql</artifactId>
-    <version>0.1-SNAPSHOT</version>
+    <version>0.5.5</version>
 
     <name>Luxis MySQL</name>
     <description>MySQL TransactionManager implementation for Luxis, backed by vertx-mysql-client</description>

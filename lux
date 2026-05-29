@@ -40,7 +40,8 @@ docker_socket_works() {
 }
 
 install_docker() {
-    if command -v docker >/dev/null 2>&1; then
+    if comm
+    and -v docker >/dev/null 2>&1; then
         return
     fi
     echo "lux: installing Docker via https://get.docker.com ..."
@@ -101,6 +102,28 @@ EOF
 
     echo "lux: Docker is installed but the daemon is not reachable. Check 'systemctl status docker'." >&2
     exit 1
+}
+
+
+cmd_deploy() {
+    echo "Running tests..."
+    TEST_MODE=VERTX mvn test
+
+    VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+    TAG="v${VERSION}"
+
+    if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+        echo "Tag ${TAG} already exists; aborting." >&2
+        exit 1
+    fi
+
+    echo "Tagging ${TAG}..."
+    git tag -a "${TAG}" -m "Release ${VERSION}"
+
+    echo "Deploying to Maven Central..."
+    mvn deploy
+
+    echo "Done. Push the tag with: git push origin ${TAG}"
 }
 
 cmd_dao_test() {
@@ -165,6 +188,7 @@ main() {
     case "$subcommand" in
         setup) shift; cmd_setup "$@" ;;
         dao-test) shift; cmd_dao_test "$@" ;;
+        deploy) shift; cmd_deploy "$@" ;;
         help|-h|--help) cmd_help ;;
         *)
             echo "lux: unknown command '$subcommand'" >&2
